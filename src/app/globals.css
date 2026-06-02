@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Font families (dimuat via <link> di root layout) */
+  --font-sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+
+  /* Surfaces — blue-sky pastel */
+  --paper: #f0f7ff;
+  --surface: #ffffff;
+  --surface-2: #e8f2ff;
+
+  /* Ink — cool navy near-black */
+  --ink: #0f1e2e;
+  --ink-soft: #3d5a7a;
+  --ink-faint: #7a9ab8;
+  --line: #c8dff5;
+
+  /* Primary — sky blue (globe logo UKWMS) */
+  --primary: #2b7fd4;
+  --primary-hover: #1a6bb8;
+  --primary-soft: rgba(43, 127, 212, 0.12);
+
+  /* Accent — emas/gold (ornamen logo UKWMS) */
+  --accent: #c8961a;
+  --accent-soft: rgba(200, 150, 26, 0.12);
+
+  /* Semantic */
+  --success: #1f7a52;
+  --success-soft: rgba(31, 122, 82, 0.14);
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, 0.12);
+  --warn: #b8860b;
+  --warn-soft: rgba(184, 134, 11, 0.14);
+
+  /* Sidebar — deep navy */
+  --nav: #0d2240;
+  --nav-soft: #163558;
+  --nav-line: rgba(255, 255, 255, 0.08);
+  --nav-text: #e8f2ff;
+  --nav-muted: #7aa3c8;
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+}
+
+/* Subtle paper grain on the body for depth */
+.grain-bg {
+  position: relative;
+}
+.grain-bg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: radial-gradient(rgba(22, 33, 31, 0.025) 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+::selection {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Focus rings */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  border-radius: 8px;
+}
+
+/* Thin, tasteful scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 99px;
+  border: 3px solid var(--paper);
+}
+
+/* Hide scrollbar utility (used in exam ribbon) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Fullscreen exam: lock the page down */
+.exam-locked {
+  overflow: hidden;
+  height: 100vh;
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
+}
+.exam-locked .selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
