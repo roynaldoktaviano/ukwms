@@ -1,21 +1,30 @@
 // =====================================================================
-// Tipe data inti — sekaligus "kontrak" yang harus dipenuhi backend Python.
+// Tipe data inti — kontrak antara frontend dan backend Python.
 // =====================================================================
 
-export type Role = "student" | "ketua_block" | "admin" | "super_admin";
+// CBT-specific roles (hanya ada di CBT, bukan dari Identity Service)
+export type CbtStaffRole =
+  | "ADMIN"
+  | "EXAM_MANAGER"
+  | "QUESTION_MANAGER"
+  | "QUESTION_REVIEWER"
+  | "ANALYTICS_VIEWER";
 
-export interface Dosen {
-  id: string;
-  nama: string;
-  nidn: string;
-  bidangIlmu?: string;
-}
+// Block & Department Coordinator berasal dari Identity Service snapshot
+export type CoordinatorRole = "BLOCK_COORDINATOR" | "DEPT_COORDINATOR";
+
+// Semua role yang dikenali di sistem CBT
+export type Role = "student" | CoordinatorRole | CbtStaffRole;
 
 export const ROLE_LABEL: Record<Role, string> = {
   student: "Mahasiswa",
-  ketua_block: "Ketua Block",
-  admin: "Admin",
-  super_admin: "Super Admin",
+  BLOCK_COORDINATOR: "Koordinator Block",
+  DEPT_COORDINATOR: "Koordinator Departemen",
+  ADMIN: "Admin CBT",
+  EXAM_MANAGER: "Manajer Ujian",
+  QUESTION_MANAGER: "Manajer Soal",
+  QUESTION_REVIEWER: "Reviewer Soal",
+  ANALYTICS_VIEWER: "Analis",
 };
 
 export interface BaseUser {
@@ -24,47 +33,102 @@ export interface BaseUser {
   nama: string;
 }
 
+// Mahasiswa — snapshot dari Identity Service
 export interface Student extends BaseUser {
   role: "student";
   nrp: string;
   semester: number;
 }
 
-export interface KetuaBlock extends BaseUser {
-  role: "ketua_block";
+// Pegawai — snapshot dari Identity Service, dengan role CBT
+export interface Employee extends BaseUser {
+  role: Exclude<Role, "student">;
   nik: string;
-  jenisBlock: string; // bidang block yang dipegang
-  blockIds: string[]; // block yang di-assign
+  coordinatedBlockIds?: string[];      // untuk BLOCK_COORDINATOR
+  coordinatedDepartmentIds?: string[]; // untuk DEPT_COORDINATOR
 }
 
-export interface Staff extends BaseUser {
-  role: "admin" | "super_admin";
-  nik: string;
-}
-
-export type User = Student | KetuaBlock | Staff;
+export type User = Student | Employee;
 
 // ---------------------------------------------------------------------
+// Difficulty soal
+// ---------------------------------------------------------------------
+export type QuestionDifficulty = "EASY" | "MEDIUM" | "HARD";
+export const DIFFICULTY_LABEL: Record<QuestionDifficulty, string> = {
+  EASY: "Mudah",
+  MEDIUM: "Sedang",
+  HARD: "Sulit",
+};
+export const DIFFICULTY_TONE: Record<QuestionDifficulty, "success" | "warn" | "danger"> = {
+  EASY: "success",
+  MEDIUM: "warn",
+  HARD: "danger",
+};
 
+// ---------------------------------------------------------------------
+// Tipe & status ujian
+// ---------------------------------------------------------------------
+export type ExamType = "BLOCK" | "PRACTICUM";
+export const EXAM_TYPE_LABEL: Record<ExamType, string> = {
+  BLOCK: "Block",
+  PRACTICUM: "Praktikum",
+};
+
+// Lifecycle: DRAFT → READY → IN_PROGRESS → FINISHED
+export type ExamStatus = "DRAFT" | "READY" | "IN_PROGRESS" | "FINISHED";
+
+// Assignment per ujian — Proctor & IT Support bukan role, hanya penugasan
+export type AssignmentType = "PROCTOR" | "IT_SUPPORT";
+export const ASSIGNMENT_LABEL: Record<AssignmentType, string> = {
+  PROCTOR: "Pengawas",
+  IT_SUPPORT: "IT Support",
+};
+export interface ExamAssignment {
+  employeeId: string;
+  employeeNama: string;
+  type: AssignmentType;
+}
+
+// ---------------------------------------------------------------------
+// Periode akademik
+// ---------------------------------------------------------------------
 export interface Period {
   id: string;
   nama: "Ganjil" | "Ganjil Perbaikan" | "Genap" | "Genap Perbaikan";
-  tahun: string; // mis. "2025/2026"
+  tahun: string;
   status: "draft" | "active" | "closed";
   activatedAt?: string;
 }
 
+// ---------------------------------------------------------------------
+// Departemen — snapshot dari Identity Service
+// ---------------------------------------------------------------------
+export interface Department {
+  id: string;
+  kode: string;
+  nama: string;
+  coordinatorEmployeeId?: string;
+  coordinatorNama?: string;
+}
+
+// ---------------------------------------------------------------------
+// Block — snapshot dari Identity Service
+// ---------------------------------------------------------------------
 export interface Block {
   id: string;
   kode: string;
   nama: string;
   semester: number;
   deskripsi?: string;
-  ketuaId?: string;
-  ketuaNama?: string;
-  jumlahSoal: number;
+  coordinatorEmployeeId?: string;
+  coordinatorNama?: string;
+  departmentIds: string[]; // departemen yang dicakup block ini
+  jumlahSoal: number;      // derived dari soal di bank dengan departmentId ∈ departmentIds
 }
 
+// ---------------------------------------------------------------------
+// Bank Soal — soal independen dari block, terikat ke department
+// ---------------------------------------------------------------------
 export type OptionLabel = "A" | "B" | "C" | "D" | "E";
 
 export interface QuestionOption {
@@ -75,36 +139,34 @@ export interface QuestionOption {
 
 export interface Question {
   id: string;
-  blockId: string;
+  departmentId: string;
   nomor: number;
   pertanyaan: string;
-  gambarSoal?: string; // url / data-uri
-  bidangIlmu: string;
+  gambarSoal?: string; // opsional
+  difficulty: QuestionDifficulty;
   pilihan: QuestionOption[]; // A–E
   jawabanBenar: OptionLabel;
 }
 
-export type JenisUjian = "Utama" | "Remidi";
-export type TipeUjian = "Praktikum" | "Teori";
-export type ExamStatus = "draft" | "scheduled" | "ongoing" | "finished";
-
+// ---------------------------------------------------------------------
+// Ujian
+// ---------------------------------------------------------------------
 export interface Exam {
   id: string;
   nama: string;
-  semester: number;
+  examType: ExamType;     // BLOCK | PRACTICUM
   blockId: string;
   blockNama: string;
-  jenisUjian: JenisUjian;
-  tipeUjian: TipeUjian;
+  departmentId?: string;  // wajib untuk PRACTICUM
+  departmentNama?: string;
   durasiMenit: number;
-  jumlahSoal: number; // jumlah soal yang diacak untuk tiap peserta
-  nilaiMinimum: number; // KKM
+  jumlahSoal: number;
+  nilaiMinimum: number;
   periodeId: string;
   pesertaIds: string[];
-  pengawasIds: string[]; // dosen yang ditugaskan sebagai pengawas
+  assignments: ExamAssignment[]; // PROCTOR + IT_SUPPORT
   status: ExamStatus;
-  lihatHasil: boolean; // checklist admin -> rilis nilai ke mahasiswa
-  remedialOfExamId?: string; // jika ini ujian remidi otomatis
+  lihatHasil: boolean;
   mulai?: string;
 }
 
@@ -123,7 +185,7 @@ export interface Attempt {
 export interface AssignedExam {
   exam: Exam;
   student: Student;
-  soal: Question[]; // urutan & subset acak khusus mahasiswa ini
+  soal: Question[];
 }
 
 // Ringkasan hasil (untuk tab "Hasil Ujian" mahasiswa)
@@ -131,12 +193,11 @@ export interface ResultSummary {
   examId: string;
   examNama: string;
   blockNama: string;
-  jenisUjian: JenisUjian;
-  tipeUjian: TipeUjian;
+  examType: ExamType;
   tanggal?: string;
   status: "Belum Dikerjakan" | "Sudah Dikerjakan" | "Belum Dirilis";
-  dirilis: boolean; // = exam.lihatHasil
-  nilai?: number; // hanya jika dirilis
+  dirilis: boolean;
+  nilai?: number;
   lulus?: boolean;
   kkm: number;
 }
@@ -151,8 +212,8 @@ export interface LiveStudentProgress {
   total: number;
   benar: number;
   salah: number;
-  persen: number; // % selesai
-  estimasiNilai: number; // nilai dari soal yang sudah dikerjakan
+  persen: number;
+  estimasiNilai: number;
   sisaDetik?: number;
 }
 
@@ -160,7 +221,8 @@ export interface LiveStudentProgress {
 export interface LiveQuestionProgress {
   questionId: string;
   nomor: number;
-  bidangIlmu: string;
+  departmentNama: string;
+  difficulty: QuestionDifficulty;
   totalMengerjakan: number;
   benar: number;
   salah: number;

@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, CenterSpinner, Dot, ProgressBar, Tabs } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { Exam, LiveQuestionProgress, LiveStudentProgress } from "@/lib/types";
+import { DIFFICULTY_LABEL, DIFFICULTY_TONE } from "@/lib/types";
 import { cn, fmtClock } from "@/lib/utils";
 
 const POLL_MS = 4000;
@@ -46,9 +47,7 @@ export default function MonitorPage() {
 
   useEffect(() => {
     if (timer.current) clearInterval(timer.current);
-    if (live) {
-      timer.current = setInterval(poll, POLL_MS);
-    }
+    if (live) timer.current = setInterval(poll, POLL_MS);
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [live, poll]);
 
@@ -77,8 +76,11 @@ export default function MonitorPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="mb-1 flex items-center gap-2">
-            {exam.status === "ongoing" ? <Badge tone="success"><Dot tone="success" pulse /> Berlangsung</Badge> : <Badge tone="neutral">{exam.status === "finished" ? "Berakhir" : "Terjadwal"}</Badge>}
+            {exam.status === "IN_PROGRESS"
+              ? <Badge tone="success"><Dot tone="success" pulse /> Berlangsung</Badge>
+              : <Badge tone="neutral">{exam.status === "FINISHED" ? "Selesai" : exam.status}</Badge>}
             <Badge tone="neutral">{exam.blockNama}</Badge>
+            {exam.departmentNama && <Badge tone="accent">{exam.departmentNama}</Badge>}
           </div>
           <h1 className="font-display text-2xl text-ink sm:text-[28px]">{exam.nama}</h1>
         </div>
@@ -113,7 +115,9 @@ export default function MonitorPage() {
         onChange={setTab}
       />
 
-      {tab === "mahasiswa" ? <PerMahasiswa rows={students} kkm={exam.nilaiMinimum} /> : <PerSoal rows={questions} peserta={students.length} />}
+      {tab === "mahasiswa"
+        ? <PerMahasiswa rows={students} kkm={exam.nilaiMinimum} />
+        : <PerSoal rows={questions} peserta={students.length} />}
     </div>
   );
 }
@@ -186,7 +190,8 @@ function PerSoal({ rows, peserta }: { rows: LiveQuestionProgress[]; peserta: num
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-sm font-semibold text-white">{r.nomor}</span>
-                <Badge tone="neutral">{r.bidangIlmu}</Badge>
+                <Badge tone="neutral">{r.departmentNama}</Badge>
+                <Badge tone={DIFFICULTY_TONE[r.difficulty]}>{DIFFICULTY_LABEL[r.difficulty]}</Badge>
               </div>
               <span className="text-xs text-ink-soft">{r.totalMengerjakan}/{peserta} mengerjakan</span>
             </div>
@@ -210,7 +215,8 @@ function PerSoal({ rows, peserta }: { rows: LiveQuestionProgress[]; peserta: num
 }
 
 function Stat({ icon: Icon, label, value, tone }: {
-  icon: React.ElementType; label: string; value: React.ReactNode; tone: "primary" | "accent" | "success" | "warn" | "neutral";
+  icon: React.ElementType; label: string; value: React.ReactNode;
+  tone: "primary" | "accent" | "success" | "warn" | "neutral";
 }) {
   const t = {
     primary: "bg-primary-soft text-primary", accent: "bg-accent-soft text-accent",

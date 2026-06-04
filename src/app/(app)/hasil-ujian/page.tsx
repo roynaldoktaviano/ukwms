@@ -3,8 +3,8 @@
 import {
   Award,
   CheckCircle2,
-  FileText,
   FlaskConical,
+  FileText,
   GraduationCap,
   Lock,
   XCircle,
@@ -56,14 +56,14 @@ export default function HasilUjianPage() {
               {results.map((r) => (
                 <li key={r.examId} className="flex flex-wrap items-center gap-4 px-5 py-4">
                   <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl",
-                    r.tipeUjian === "Praktikum" ? "bg-accent-soft text-accent" : "bg-primary-soft text-primary")}>
-                    {r.tipeUjian === "Praktikum" ? <FlaskConical className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
+                    r.examType === "PRACTICUM" ? "bg-accent-soft text-accent" : "bg-primary-soft text-primary")}>
+                    {r.examType === "PRACTICUM" ? <FlaskConical className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
                   </span>
 
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-ink">{r.examNama}</p>
                     <p className="text-sm text-ink-soft">
-                      {r.blockNama} · {r.jenisUjian} · KKM {r.kkm}
+                      {r.blockNama} · {r.examType === "PRACTICUM" ? "Praktikum" : "Block"} · KKM {r.kkm}
                       {r.tanggal && ` · ${new Date(r.tanggal).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`}
                     </p>
                   </div>
@@ -97,11 +97,9 @@ function ResultValue({ r }: { r: ResultSummary }) {
         <p className={cn("font-display text-3xl leading-none", r.lulus ? "text-success" : "text-danger")}>{r.nilai}</p>
         <p className="mt-1 text-xs text-ink-faint">dari 100</p>
       </div>
-      {r.lulus ? (
-        <Badge tone="success"><CheckCircle2 className="h-3.5 w-3.5" /> Lulus</Badge>
-      ) : (
-        <Badge tone="danger"><XCircle className="h-3.5 w-3.5" /> Remidi</Badge>
-      )}
+      {r.lulus
+        ? <Badge tone="success"><CheckCircle2 className="h-3.5 w-3.5" /> Lulus</Badge>
+        : <Badge tone="danger"><XCircle className="h-3.5 w-3.5" /> Tidak Lulus</Badge>}
     </div>
   );
 }

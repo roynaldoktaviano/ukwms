@@ -43,7 +43,7 @@ export function ssoLogoutUrl(): string {
   return SSO_LOGOUT;
 }
 
-// Tujuan default setelah login, per role.
-export function homeForRole(role: Role): string {
+// Tujuan default setelah login — semua role menuju dashboard.
+export function homeForRole(_role: Role): string {
   return "/dashboard";
 }

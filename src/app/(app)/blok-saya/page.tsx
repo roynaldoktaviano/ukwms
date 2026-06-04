@@ -13,36 +13,40 @@ import { QuestionView } from "@/components/question-view";
 import { Badge, Card, CenterSpinner, EmptyState, Select, Tabs } from "@/components/ui";
 import { useAuth } from "@/contexts/auth-context";
 import { api } from "@/lib/api";
-import type { Block, Exam, KetuaBlock, LiveStudentProgress, Question } from "@/lib/types";
+import type { Block, Department, Employee, Exam, LiveStudentProgress, Question } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export default function BlokSayaPage() {
   const { user } = useAuth();
-  const ketua = user as KetuaBlock | null;
+  const coordinator = user as Employee | null;
   const [blocks, setBlocks] = useState<Block[] | null>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [activeBlock, setActiveBlock] = useState<string>("");
   const [tab, setTab] = useState<"soal" | "nilai">("soal");
 
   useEffect(() => {
-    if (!ketua) return;
-    const ids = ketua.blockIds ?? [];
+    if (!coordinator) return;
+    const ids = coordinator.coordinatedBlockIds ?? [];
     api.listBlocks().then((all) => {
       const mine = all.filter((b) => ids.includes(b.id));
       setBlocks(mine);
       if (mine[0]) setActiveBlock(mine[0].id);
     });
-  }, [ketua]);
+    api.listDepartments().then(setDepartments);
+  }, [coordinator]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!ketua) return null;
+  if (!coordinator) return null;
+
+  const deptMap = Object.fromEntries(departments.map((d) => [d.id, d]));
 
   return (
     <div className="animate-fade-up space-y-6">
-      <PageHeader title="Blok Saya" desc="Tinjau soal dan nilai mahasiswa pada block yang Anda ampu." />
+      <PageHeader title="Blok Saya" desc="Tinjau soal dan nilai mahasiswa pada block yang Anda koordinasi." />
 
       {!blocks ? (
         <CenterSpinner label="Memuat block…" />
       ) : blocks.length === 0 ? (
-        <EmptyState icon={<BookOpen className="h-8 w-8" />} title="Belum ada block" desc="Anda belum ditugaskan sebagai ketua pada block manapun." />
+        <EmptyState icon={<BookOpen className="h-8 w-8" />} title="Belum ada block" desc="Anda belum ditugaskan sebagai koordinator pada block manapun." />
       ) : (
         <>
           <Tabs tabs={blocks.map((b) => ({ id: b.id, label: b.nama }))} value={activeBlock} onChange={setActiveBlock} />
@@ -57,12 +61,22 @@ export default function BlokSayaPage() {
                   <span className="inline-flex items-center gap-1.5"><Database className="h-4 w-4 text-ink-faint" /> {b.jumlahSoal} soal</span>
                 </div>
 
+                {/* Departemen yang dicakup */}
+                {b.departmentIds.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-ink-soft">Departemen:</span>
+                    {b.departmentIds.map((did) => (
+                      <Badge key={did} tone="primary">{deptMap[did]?.nama ?? did}</Badge>
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex gap-1 rounded-xl border border-line bg-surface-2 p-1">
                   <SubTab active={tab === "soal"} onClick={() => setTab("soal")} icon={ClipboardList} label="Soal" />
                   <SubTab active={tab === "nilai"} onClick={() => setTab("nilai")} icon={GraduationCap} label="Nilai Mahasiswa" />
                 </div>
 
-                {tab === "soal" ? <SoalList blockId={b.id} /> : <NilaiBlock blockId={b.id} />}
+                {tab === "soal" ? <SoalList blockId={b.id} deptMap={deptMap} /> : <NilaiBlock blockId={b.id} />}
               </div>
             ))}
         </>
@@ -81,13 +95,21 @@ function SubTab({ active, onClick, icon: Icon, label }: { active: boolean; onCli
   );
 }
 
-function SoalList({ blockId }: { blockId: string }) {
+function SoalList({ blockId, deptMap }: { blockId: string; deptMap: Record<string, Department> }) {
   const [questions, setQuestions] = useState<Question[] | null>(null);
   useEffect(() => { setQuestions(null); api.listQuestions(blockId).then(setQuestions); }, [blockId]);
 
   if (!questions) return <CenterSpinner label="Memuat soal…" />;
-  if (questions.length === 0) return <EmptyState icon={<Database className="h-8 w-8" />} title="Belum ada soal" desc="Admin belum menambahkan soal pada block ini." />;
-  return <div className="space-y-3">{questions.map((q) => <QuestionView key={q.id} q={q} />)}</div>;
+  if (questions.length === 0) return (
+    <EmptyState icon={<Database className="h-8 w-8" />} title="Belum ada soal" desc="Belum ada soal di bank soal untuk departemen block ini." />
+  );
+  return (
+    <div className="space-y-3">
+      {questions.map((q) => (
+        <QuestionView key={q.id} q={q} departmentNama={deptMap[q.departmentId]?.nama} />
+      ))}
+    </div>
+  );
 }
 
 function NilaiBlock({ blockId }: { blockId: string }) {
@@ -119,7 +141,7 @@ function NilaiBlock({ blockId }: { blockId: string }) {
     <div className="space-y-4">
       <div className="max-w-sm">
         <Select value={examId} onChange={(e) => setExamId(e.target.value)}>
-          {exams.map((e) => <option key={e.id} value={e.id}>{e.nama} · {e.jenisUjian}</option>)}
+          {exams.map((e) => <option key={e.id} value={e.id}>{e.nama} · {e.examType}</option>)}
         </Select>
       </div>
 

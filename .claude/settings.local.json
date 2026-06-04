@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(New-Item -ItemType Directory -Path \"e:\\\\profile\\\\cbt\\\\public\" -Force)"
+      "PowerShell(New-Item -ItemType Directory -Path \"e:\\\\profile\\\\cbt\\\\public\" -Force)",
+      "Bash(npx tsc *)"
     ]
   }
 }

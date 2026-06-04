@@ -274,7 +274,7 @@ export default function ExamRunnerPage() {
             </div>
 
             <p className="selectable text-[17px] leading-relaxed text-ink">{q.pertanyaan}</p>
-            <span className="mt-2 inline-block rounded-md bg-surface-2 px-2 py-0.5 text-xs text-ink-faint">{q.bidangIlmu}</span>
+            <span className="mt-2 inline-block rounded-md bg-surface-2 px-2 py-0.5 text-xs text-ink-faint">{q.difficulty}</span>
 
             {q.gambarSoal && (
               <div className="mt-4 overflow-hidden rounded-xl border border-line bg-white p-2">

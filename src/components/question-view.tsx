@@ -2,14 +2,17 @@
 
 import { Check, Image as ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui";
-import type { Question } from "@/lib/types";
+import { DIFFICULTY_LABEL, DIFFICULTY_TONE, type Question } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/**
- * Tampilan soal read-only dengan jawaban benar disorot.
- * Dipakai di: detail Block (admin), Blok Saya (ketua), Bank Soal (super admin).
- */
-export function QuestionView({ q, index, actions }: { q: Question; index?: number; actions?: React.ReactNode }) {
+interface QuestionViewProps {
+  q: Question;
+  index?: number;
+  actions?: React.ReactNode;
+  departmentNama?: string; // label tampilan jika sudah diresolved di parent
+}
+
+export function QuestionView({ q, index, actions, departmentNama }: QuestionViewProps) {
   return (
     <div className="rounded-xl border border-line bg-surface p-4 sm:p-5">
       <div className="flex items-start gap-3">
@@ -21,7 +24,11 @@ export function QuestionView({ q, index, actions }: { q: Question; index?: numbe
             <p className="text-[15px] leading-relaxed text-ink">{q.pertanyaan}</p>
             {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
           </div>
-          <Badge tone="neutral" className="mt-2">{q.bidangIlmu}</Badge>
+
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {departmentNama && <Badge tone="neutral">{departmentNama}</Badge>}
+            <Badge tone={DIFFICULTY_TONE[q.difficulty]}>{DIFFICULTY_LABEL[q.difficulty]}</Badge>
+          </div>
 
           {q.gambarSoal && (
             <div className="mt-3 inline-flex overflow-hidden rounded-lg border border-line bg-white p-1.5">

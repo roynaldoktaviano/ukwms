@@ -2,7 +2,7 @@ import {
   allUsers,
   attempts as seedAttempts,
   blocks as seedBlocks,
-  dosenList as seedDosen,
+  departments as seedDepartments,
   exams as seedExams,
   periods as seedPeriods,
   questions as seedQuestions,
@@ -13,7 +13,8 @@ import type {
   AssignedExam,
   Attempt,
   Block,
-  Dosen,
+  Department,
+  Employee,
   Exam,
   LiveQuestionProgress,
   LiveStudentProgress,
@@ -30,8 +31,7 @@ const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 // =====================================================================
-//  REAL MODE — pemanggil REST generik untuk backend Python.
-//  Endpoint yang diharapkan ada di komentar tiap method di bawah.
+//  REAL MODE
 // =====================================================================
 function token(): string | null {
   if (typeof document === "undefined") return null;
@@ -54,20 +54,19 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // =====================================================================
-//  MOCK MODE — DB in-memory (mutasi bertahan selama sesi browser).
+//  MOCK MODE — DB in-memory
 // =====================================================================
 const db = {
   periods: structuredClone(seedPeriods) as Period[],
+  departments: structuredClone(seedDepartments) as Department[],
   blocks: structuredClone(seedBlocks) as Block[],
   questions: structuredClone(seedQuestions) as Question[],
   exams: structuredClone(seedExams) as Exam[],
   attempts: structuredClone(seedAttempts) as Attempt[],
   users: structuredClone(allUsers) as User[],
-  dosen: structuredClone(seedDosen) as Dosen[],
 };
 
-// Shuffle deterministik (per mahasiswa+ujian) supaya urutan soal stabil.
-// Math.imul dipakai agar perkalian tidak overflow batas safe integer JS.
+// Shuffle deterministik per mahasiswa+ujian
 function seededShuffle<T>(arr: T[], seed: string): T[] {
   let h = 2166136261 >>> 0;
   for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
@@ -80,51 +79,49 @@ function seededShuffle<T>(arr: T[], seed: string): T[] {
   return out;
 }
 
-function blockQuestions(blockId: string) {
-  return db.questions.filter((q) => q.blockId === blockId).sort((a, b) => a.nomor - b.nomor);
+// Soal untuk satu ujian — BLOCK: semua dept di block, PRACTICUM: dept spesifik
+function examQuestions(exam: Exam): Question[] {
+  if (exam.examType === "PRACTICUM" && exam.departmentId) {
+    return db.questions.filter((q) => q.departmentId === exam.departmentId);
+  }
+  const block = db.blocks.find((b) => b.id === exam.blockId);
+  const deptIds = new Set(block?.departmentIds ?? []);
+  return db.questions.filter((q) => deptIds.has(q.departmentId));
 }
 
 function assignedFor(examId: string, studentId: string): AssignedExam {
   const exam = db.exams.find((e) => e.id === examId)!;
   const student = db.users.find((u) => u.id === studentId) as Student;
-  const pool = blockQuestions(exam.blockId);
+  const pool = examQuestions(exam);
   const picked = seededShuffle(pool, examId + studentId).slice(0, Math.min(exam.jumlahSoal, pool.length));
   return { exam, student, soal: picked };
 }
 
 function scoreAttempt(exam: Exam, a: Attempt) {
   const soal = assignedFor(exam.id, a.studentId).soal;
-  let benar = 0;
-  let dikerjakan = 0;
+  let benar = 0, dikerjakan = 0;
   for (const q of soal) {
     const j = a.jawaban[q.id];
-    if (j) {
-      dikerjakan++;
-      if (j === q.jawabanBenar) benar++;
-    }
+    if (j) { dikerjakan++; if (j === q.jawabanBenar) benar++; }
   }
   const total = soal.length || 1;
   return {
-    total,
-    dikerjakan,
-    benar,
-    salah: dikerjakan - benar,
+    total, dikerjakan, benar, salah: dikerjakan - benar,
     nilai: Math.round((benar / total) * 100),
     persen: Math.round((dikerjakan / total) * 100),
     estimasi: dikerjakan ? Math.round((benar / dikerjakan) * 100) : 0,
   };
 }
 
-// --- Simulasi "live": tiap kali monitor diminta, dorong beberapa peserta maju ---
+// Simulasi "live" — dorong beberapa peserta maju tiap poll
 function tickLive(examId: string) {
   const exam = db.exams.find((e) => e.id === examId);
-  if (!exam || exam.status !== "ongoing") return;
+  if (!exam || exam.status !== "IN_PROGRESS") return;
   for (const a of db.attempts.filter((x) => x.examId === examId && x.status === "in_progress")) {
     const soal = assignedFor(examId, a.studentId).soal;
     const unanswered = soal.filter((q) => !a.jawaban[q.id]);
     if (unanswered.length && Math.random() < 0.55) {
       const q = unanswered[0];
-      // 72% jawab benar, sisanya random
       a.jawaban[q.id] = Math.random() < 0.72 ? q.jawabanBenar : (["A", "B", "C", "D", "E"][Math.floor(Math.random() * 5)] as OptionLabel);
     }
     if (a.sisaDetik) a.sisaDetik = Math.max(0, a.sisaDetik - 6 - Math.floor(Math.random() * 8));
@@ -136,21 +133,16 @@ function tickLive(examId: string) {
 // =====================================================================
 export const api = {
   // ---------------- AUTH ----------------
-  // REAL: GET /auth/me  (pakai Bearer token / cookie sesi dari backend)
+  // REAL: GET /auth/me
   async me(): Promise<User | null> {
     if (!USE_MOCK) {
-      try {
-        return await http<User>("/auth/me");
-      } catch {
-        return null;
-      }
+      try { return await http<User>("/auth/me"); } catch { return null; }
     }
     await sleep(120);
     const uid = typeof document !== "undefined" ? document.cookie.match(/cbt_uid=([^;]+)/)?.[1] : null;
     return uid ? db.users.find((u) => u.id === decodeURIComponent(uid)) ?? null : null;
   },
 
-  // MOCK only — login demo cepat. (Di produksi alur dipegang SSO.)
   async devLogin(userId: string): Promise<User> {
     await sleep(200);
     const u = db.users.find((x) => x.id === userId);
@@ -178,7 +170,6 @@ export const api = {
     const next = db.periods.find((p) => p.id === id);
     if (!next) throw new Error("Periode tidak ditemukan");
     const current = db.periods.find((p) => p.status === "active");
-    // Aktivasi Ganjil -> Genap menambah semester semua mahasiswa +1
     let bumped = false;
     if (current && current.id !== id) {
       current.status = "closed";
@@ -190,17 +181,32 @@ export const api = {
     return { semesterBumped: bumped };
   },
 
+  // ---------------- DEPARTEMEN ----------------
+  // REAL: GET /departments
+  async listDepartments(): Promise<Department[]> {
+    if (!USE_MOCK) return http("/departments");
+    await sleep(120);
+    return structuredClone(db.departments);
+  },
+
   // ---------------- BLOCK ----------------
   // REAL: GET /blocks · GET /blocks/{id} · POST /blocks · PATCH /blocks/{id}
   async listBlocks(): Promise<Block[]> {
     if (!USE_MOCK) return http("/blocks");
     await sleep(150);
-    return structuredClone(db.blocks);
+    // update jumlahSoal dari questions di departmentIds block
+    return structuredClone(db.blocks.map((b) => {
+      const deptIds = new Set(b.departmentIds);
+      const count = db.questions.filter((q) => deptIds.has(q.departmentId)).length;
+      return { ...b, jumlahSoal: count };
+    }));
   },
   async getBlock(id: string): Promise<Block> {
     if (!USE_MOCK) return http(`/blocks/${id}`);
     await sleep(120);
-    return structuredClone(db.blocks.find((b) => b.id === id)!);
+    const b = db.blocks.find((b) => b.id === id)!;
+    const deptIds = new Set(b.departmentIds);
+    return structuredClone({ ...b, jumlahSoal: db.questions.filter((q) => deptIds.has(q.departmentId)).length });
   },
   async createBlock(b: Omit<Block, "id" | "jumlahSoal">): Promise<Block> {
     if (!USE_MOCK) return http("/blocks", { method: "POST", body: JSON.stringify(b) });
@@ -210,27 +216,34 @@ export const api = {
     return block;
   },
 
-  // ---------------- SOAL ----------------
-  // REAL: GET /blocks/{id}/questions · POST /blocks/{id}/questions · PATCH/DELETE /questions/{id}
-  //       POST /blocks/{id}/questions/import  (multipart: file excel/word → backend parse + ekstrak gambar)
-  async listQuestions(blockId: string): Promise<Question[]> {
-    if (!USE_MOCK) return http(`/blocks/${blockId}/questions`);
+  // ---------------- SOAL (Bank Soal) ----------------
+  // REAL: GET /questions?departmentId=&difficulty=
+  //       GET /questions · POST /questions · PATCH /questions/{id} · DELETE /questions/{id}
+  //       POST /questions/import (multipart)
+
+  // Soal semua / difilter per block (menggunakan departmentIds block)
+  async listQuestions(blockId?: string): Promise<Question[]> {
+    if (!USE_MOCK) return http(`/questions${blockId ? `?blockId=${blockId}` : ""}`);
     await sleep(150);
-    return structuredClone(blockQuestions(blockId));
+    if (blockId) {
+      const block = db.blocks.find((b) => b.id === blockId);
+      if (!block) return [];
+      const deptIds = new Set(block.departmentIds);
+      return structuredClone(db.questions.filter((q) => deptIds.has(q.departmentId)));
+    }
+    return structuredClone(db.questions);
   },
   async bankSoal(): Promise<Question[]> {
     if (!USE_MOCK) return http("/questions");
     await sleep(180);
     return structuredClone(db.questions);
   },
-  async createQuestion(blockId: string, q: Omit<Question, "id" | "blockId" | "nomor">): Promise<Question> {
-    if (!USE_MOCK) return http(`/blocks/${blockId}/questions`, { method: "POST", body: JSON.stringify(q) });
+  async createQuestion(q: Omit<Question, "id" | "nomor">): Promise<Question> {
+    if (!USE_MOCK) return http("/questions", { method: "POST", body: JSON.stringify(q) });
     await sleep(200);
-    const nomor = blockQuestions(blockId).length + 1;
-    const created: Question = { id: `q-${Date.now()}`, blockId, nomor, ...q };
+    const nomor = db.questions.filter((x) => x.departmentId === q.departmentId).length + 1;
+    const created: Question = { id: `q-${Date.now()}`, nomor, ...q };
     db.questions.push(created);
-    const blk = db.blocks.find((b) => b.id === blockId);
-    if (blk) blk.jumlahSoal = blockQuestions(blockId).length;
     return created;
   },
   async updateQuestion(id: string, patch: Partial<Question>): Promise<Question> {
@@ -243,19 +256,13 @@ export const api = {
   async deleteQuestion(id: string): Promise<void> {
     if (!USE_MOCK) return http(`/questions/${id}`, { method: "DELETE" });
     await sleep(150);
-    const q = db.questions.find((x) => x.id === id);
     db.questions = db.questions.filter((x) => x.id !== id);
-    if (q) {
-      const blk = db.blocks.find((b) => b.id === q.blockId);
-      if (blk) blk.jumlahSoal = blockQuestions(q.blockId).length;
-    }
   },
-  // Pratinjau hasil parse file (di mock kita kembalikan contoh; di produksi backend yang parse).
-  async importQuestionsPreview(_blockId: string, _file: File): Promise<Omit<Question, "id" | "blockId" | "nomor">[]> {
+  async importQuestionsPreview(_blockId: string, _file: File): Promise<Omit<Question, "id" | "nomor">[]> {
     if (!USE_MOCK) {
       const fd = new FormData();
       fd.append("file", _file);
-      const res = await fetch(`${API_URL}/blocks/${_blockId}/questions/import?preview=1`, {
+      const res = await fetch(`${API_URL}/questions/import?preview=1&blockId=${_blockId}`, {
         method: "POST",
         headers: token() ? { Authorization: `Bearer ${token()}` } : undefined,
         body: fd,
@@ -265,8 +272,8 @@ export const api = {
     }
     await sleep(700);
     return [
-      { pertanyaan: "(dari file) Curah jantung (cardiac output) ditentukan oleh stroke volume dan ...?", bidangIlmu: "Fisiologi", jawabanBenar: "A", pilihan: [{ label: "A", teks: "Heart rate" }, { label: "B", teks: "Tekanan vena" }, { label: "C", teks: "Suhu tubuh" }, { label: "D", teks: "pH darah" }, { label: "E", teks: "Hematokrit" }] },
-      { pertanyaan: "(dari file) Bunyi jantung S1 dihasilkan oleh penutupan katup ...?", bidangIlmu: "Anatomi", jawabanBenar: "B", pilihan: [{ label: "A", teks: "Semilunar" }, { label: "B", teks: "Atrioventrikular" }, { label: "C", teks: "Aorta" }, { label: "D", teks: "Pulmonal" }, { label: "E", teks: "Eustachian" }] },
+      { departmentId: "dept-fis", difficulty: "MEDIUM", pertanyaan: "(dari file) Curah jantung (cardiac output) ditentukan oleh stroke volume dan ...?", jawabanBenar: "A", pilihan: [{ label: "A", teks: "Heart rate" }, { label: "B", teks: "Tekanan vena" }, { label: "C", teks: "Suhu tubuh" }, { label: "D", teks: "pH darah" }, { label: "E", teks: "Hematokrit" }] },
+      { departmentId: "dept-ana", difficulty: "EASY", pertanyaan: "(dari file) Bunyi jantung S1 dihasilkan oleh penutupan katup ...?", jawabanBenar: "B", pilihan: [{ label: "A", teks: "Semilunar" }, { label: "B", teks: "Atrioventrikular" }, { label: "C", teks: "Aorta" }, { label: "D", teks: "Pulmonal" }, { label: "E", teks: "Eustachian" }] },
     ];
   },
 
@@ -282,15 +289,27 @@ export const api = {
     await sleep(120);
     return structuredClone(db.exams.find((e) => e.id === id)!);
   },
-  async createExam(e: Omit<Exam, "id" | "status" | "lihatHasil" | "blockNama">): Promise<Exam> {
+  async createExam(e: Omit<Exam, "id" | "status" | "lihatHasil" | "blockNama" | "departmentNama">): Promise<Exam> {
     if (!USE_MOCK) return http("/exams", { method: "POST", body: JSON.stringify(e) });
     await sleep(280);
     const blk = db.blocks.find((b) => b.id === e.blockId);
-    const created: Exam = { id: `ex-${Date.now()}`, status: "scheduled", lihatHasil: false, blockNama: blk?.nama ?? "", pengawasIds: [], ...e };
+    const dept = e.departmentId ? db.departments.find((d) => d.id === e.departmentId) : undefined;
+    const created: Exam = {
+      id: `ex-${Date.now()}`, status: "DRAFT", lihatHasil: false,
+      blockNama: blk?.nama ?? "", departmentNama: dept?.nama,
+      ...e,
+    };
     db.exams.push(created);
     return created;
   },
-  // Checklist "Lihat Hasil Ujian" → merilis nilai ke mahasiswa
+  async updateExamStatus(id: string, status: Exam["status"]): Promise<Exam> {
+    if (!USE_MOCK) return http(`/exams/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+    await sleep(200);
+    const e = db.exams.find((x) => x.id === id)!;
+    e.status = status;
+    if (status === "IN_PROGRESS") e.mulai = new Date().toISOString();
+    return structuredClone(e);
+  },
   async setLihatHasil(id: string, value: boolean): Promise<Exam> {
     if (!USE_MOCK) return http(`/exams/${id}`, { method: "PATCH", body: JSON.stringify({ lihatHasil: value }) });
     await sleep(160);
@@ -341,10 +360,7 @@ export const api = {
     }
     await sleep(300);
     const a = db.attempts.find((x) => x.examId === examId && x.studentId === studentId);
-    if (a) {
-      a.status = "submitted";
-      a.submittedAt = new Date().toISOString();
-    }
+    if (a) { a.status = "submitted"; a.submittedAt = new Date().toISOString(); }
   },
 
   // ---------------- HASIL (mahasiswa) ----------------
@@ -359,7 +375,7 @@ export const api = {
       const sc = a ? scoreAttempt(e, a) : null;
       out.push({
         examId: e.id, examNama: e.nama, blockNama: e.blockNama,
-        jenisUjian: e.jenisUjian, tipeUjian: e.tipeUjian, tanggal: a?.submittedAt,
+        examType: e.examType, tanggal: a?.submittedAt,
         kkm: e.nilaiMinimum, dirilis: e.lihatHasil,
         status: !done ? "Belum Dikerjakan" : e.lihatHasil ? "Sudah Dikerjakan" : "Belum Dirilis",
         nilai: done && e.lihatHasil ? sc!.nilai : undefined,
@@ -369,9 +385,8 @@ export const api = {
     return out;
   },
 
-  // ---------------- MONITORING LIVE (admin) ----------------
+  // ---------------- MONITORING LIVE (admin/proctor) ----------------
   // REAL: GET /exams/{id}/live/students · GET /exams/{id}/live/questions
-  //       (di produksi sebaiknya pakai WebSocket/SSE; di mock kita poll)
   async liveStudents(examId: string): Promise<LiveStudentProgress[]> {
     if (!USE_MOCK) return http(`/exams/${examId}/live/students`);
     await sleep(120);
@@ -393,8 +408,9 @@ export const api = {
     if (!USE_MOCK) return http(`/exams/${examId}/live/questions`);
     await sleep(120);
     const exam = db.exams.find((e) => e.id === examId)!;
-    const soal = blockQuestions(exam.blockId).slice(0, exam.jumlahSoal);
+    const soal = examQuestions(exam).slice(0, exam.jumlahSoal);
     const sessions = db.attempts.filter((x) => x.examId === examId);
+    const deptMap = Object.fromEntries(db.departments.map((d) => [d.id, d.nama]));
     return soal.map((q) => {
       let benar = 0, salah = 0, belum = 0;
       for (const a of sessions) {
@@ -403,39 +419,41 @@ export const api = {
         else if (j === q.jawabanBenar) benar++;
         else salah++;
       }
-      return { questionId: q.id, nomor: q.nomor, bidangIlmu: q.bidangIlmu, totalMengerjakan: benar + salah, benar, salah, belum };
+      return {
+        questionId: q.id, nomor: q.nomor,
+        departmentNama: deptMap[q.departmentId] ?? q.departmentId,
+        difficulty: q.difficulty,
+        totalMengerjakan: benar + salah, benar, salah, belum,
+      };
     });
   },
 
-  // ---------------- USER (super admin) ----------------
+  // ---------------- USER ----------------
   // REAL: GET /users?role= · POST /users
   async listUsers(role?: Role): Promise<User[]> {
     if (!USE_MOCK) return http(`/users${role ? `?role=${role}` : ""}`);
     await sleep(160);
     return structuredClone(role ? db.users.filter((u) => u.role === role) : db.users);
   },
-  async createUser(payload: Partial<User> & { role: Role; password?: string }): Promise<User> {
+  async createUser(payload: Partial<User> & { role: Role }): Promise<User> {
     if (!USE_MOCK) return http("/users", { method: "POST", body: JSON.stringify(payload) });
     await sleep(240);
-    const { password, ...rest } = payload as Record<string, unknown>;
-    void password;
-    const user = { id: `u-${Date.now()}`, ...(rest as object) } as User;
+    const user = { id: `u-${Date.now()}`, ...(payload as object) } as User;
     db.users.push(user);
     return user;
   },
 
-  // dipakai admin saat memilih peserta ujian (bulk per-semester / per-nama)
   async listStudents(): Promise<Student[]> {
     if (!USE_MOCK) return http("/users?role=student");
     await sleep(120);
     return structuredClone(db.users.filter((u) => u.role === "student") as Student[]);
   },
 
-  // REAL: GET /dosen
-  async listDosen(): Promise<Dosen[]> {
-    if (!USE_MOCK) return http("/dosen");
+  // Daftar pegawai (untuk picker Proctor/IT Support saat buat ujian)
+  async listEmployees(): Promise<Employee[]> {
+    if (!USE_MOCK) return http("/employees");
     await sleep(120);
-    return structuredClone(db.dosen);
+    return structuredClone(db.users.filter((u) => u.role !== "student") as Employee[]);
   },
 };
 

@@ -2,7 +2,9 @@
 
 import {
   ArrowLeft,
+  BookOpen,
   CheckCircle2,
+  ClipboardList,
   Database,
   FileSpreadsheet,
   FileText,
@@ -24,7 +26,8 @@ import {
   Badge, Button, Card, CenterSpinner, EmptyState, Field, Input, Label, Modal, Select, Spinner, Textarea,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Block, OptionLabel, Question, QuestionOption } from "@/lib/types";
+import type { Block, Department, OptionLabel, Question, QuestionDifficulty, QuestionOption } from "@/lib/types";
+import { DIFFICULTY_LABEL } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const LABELS: OptionLabel[] = ["A", "B", "C", "D", "E"];
@@ -45,17 +48,17 @@ export default function BlockDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [block, setBlock] = useState<Block | null>(null);
   const [questions, setQuestions] = useState<Question[] | null>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
   const [importKind, setImportKind] = useState<"excel" | "word" | null>(null);
   const [toDelete, setToDelete] = useState<Question | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  function loadQuestions() {
-    api.listQuestions(id).then(setQuestions);
-  }
+  function loadQuestions() { api.listQuestions(id).then(setQuestions); }
   useEffect(() => {
     api.getBlock(id).then(setBlock);
+    api.listDepartments().then(setDepartments);
     loadQuestions();
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -75,6 +78,9 @@ export default function BlockDetailPage() {
       setDeleting(false);
     }
   }
+
+  const deptMap = Object.fromEntries(departments.map((d) => [d.id, d]));
+  const blockDepts = block ? departments.filter((d) => block.departmentIds.includes(d.id)) : [];
 
   return (
     <div className="animate-fade-up space-y-6">
@@ -98,33 +104,48 @@ export default function BlockDetailPage() {
             }
           />
 
+          {/* Metadata block */}
           <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-line bg-surface px-5 py-3.5 text-sm text-ink-soft">
             <span className="inline-flex items-center gap-1.5"><Badge tone="neutral">{block.kode}</Badge></span>
             <span className="inline-flex items-center gap-1.5"><Layers className="h-4 w-4 text-ink-faint" /> Semester {block.semester}</span>
             <span className="inline-flex items-center gap-1.5"><Database className="h-4 w-4 text-ink-faint" /> {block.jumlahSoal} soal</span>
-            <span className="inline-flex items-center gap-1.5"><UserCog className="h-4 w-4 text-ink-faint" /> {block.ketuaNama ?? "Belum ada ketua"}</span>
+            <span className="inline-flex items-center gap-1.5"><UserCog className="h-4 w-4 text-ink-faint" /> {block.coordinatorNama ?? "Belum ada koordinator"}</span>
           </div>
 
+          {/* Departemen yang dicakup */}
+          {blockDepts.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-ink-soft">Departemen:</span>
+              {blockDepts.map((d) => <Badge key={d.id} tone="primary">{d.nama}</Badge>)}
+            </div>
+          )}
+
+          {/* Daftar soal */}
           {!questions ? (
             <CenterSpinner label="Memuat soal…" />
           ) : questions.length === 0 ? (
             <EmptyState
               icon={<Database className="h-8 w-8" />}
               title="Belum ada soal"
-              desc="Tambahkan soal lewat Form, atau impor massal dari Excel / Word (gambar ikut terbaca)."
+              desc="Tambahkan soal ke bank soal dari departemen yang dicakup block ini."
               action={<Button onClick={() => { setEditing(null); setFormOpen(true); }}><Plus className="h-4 w-4" /> Tambah Soal</Button>}
             />
           ) : (
             <div className="space-y-3">
               {questions.map((q) => (
-                <QuestionView key={q.id} q={q} actions={
-                  <>
-                    <button onClick={() => { setEditing(q); setFormOpen(true); }} title="Edit"
-                      className="rounded-lg p-1.5 text-ink-faint hover:bg-black/5 hover:text-primary"><Pencil className="h-4 w-4" /></button>
-                    <button onClick={() => setToDelete(q)} title="Hapus"
-                      className="rounded-lg p-1.5 text-ink-faint hover:bg-danger-soft hover:text-danger"><Trash2 className="h-4 w-4" /></button>
-                  </>
-                } />
+                <QuestionView
+                  key={q.id}
+                  q={q}
+                  departmentNama={deptMap[q.departmentId]?.nama}
+                  actions={
+                    <>
+                      <button onClick={() => { setEditing(q); setFormOpen(true); }} title="Edit"
+                        className="rounded-lg p-1.5 text-ink-faint hover:bg-black/5 hover:text-primary"><Pencil className="h-4 w-4" /></button>
+                      <button onClick={() => setToDelete(q)} title="Hapus"
+                        className="rounded-lg p-1.5 text-ink-faint hover:bg-danger-soft hover:text-danger"><Trash2 className="h-4 w-4" /></button>
+                    </>
+                  }
+                />
               ))}
             </div>
           )}
@@ -135,7 +156,8 @@ export default function BlockDetailPage() {
         key={editing?.id ?? "new"}
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        blockId={id}
+        blockDepartments={blockDepts}
+        allDepartments={departments}
         editing={editing}
         onSaved={refresh}
       />
@@ -144,6 +166,7 @@ export default function BlockDetailPage() {
         kind={importKind}
         onClose={() => setImportKind(null)}
         blockId={id}
+        departments={blockDepts}
         onImported={refresh}
       />
 
@@ -157,13 +180,15 @@ export default function BlockDetailPage() {
 }
 
 // =====================================================================
-//  FORM SOAL (tambah / edit) — dengan dukungan gambar soal & gambar pilihan
+//  FORM SOAL
 // =====================================================================
-function QuestionFormModal({ open, onClose, blockId, editing, onSaved }: {
-  open: boolean; onClose: () => void; blockId: string; editing: Question | null; onSaved: () => void;
+function QuestionFormModal({ open, onClose, blockDepartments, allDepartments, editing, onSaved }: {
+  open: boolean; onClose: () => void; blockDepartments: Department[]; allDepartments: Department[]; editing: Question | null; onSaved: () => void;
 }) {
+  const depts = blockDepartments.length > 0 ? blockDepartments : allDepartments;
   const [pertanyaan, setPertanyaan] = useState(editing?.pertanyaan ?? "");
-  const [bidangIlmu, setBidangIlmu] = useState(editing?.bidangIlmu ?? "");
+  const [departmentId, setDepartmentId] = useState(editing?.departmentId ?? (depts[0]?.id ?? ""));
+  const [difficulty, setDifficulty] = useState<QuestionDifficulty>(editing?.difficulty ?? "MEDIUM");
   const [gambarSoal, setGambarSoal] = useState<string | undefined>(editing?.gambarSoal);
   const [pilihan, setPilihan] = useState<QuestionOption[]>(
     editing ? LABELS.map((l) => editing.pilihan.find((p) => p.label === l) ?? { label: l, teks: "" }) : emptyOptions(),
@@ -174,20 +199,16 @@ function QuestionFormModal({ open, onClose, blockId, editing, onSaved }: {
   function setOptText(label: OptionLabel, teks: string) {
     setPilihan((p) => p.map((o) => (o.label === label ? { ...o, teks } : o)));
   }
-  async function setOptImage(label: OptionLabel, file?: File) {
-    const gambar = file ? await readAsDataURL(file) : undefined;
-    setPilihan((p) => p.map((o) => (o.label === label ? { ...o, gambar } : o)));
-  }
 
-  const valid = pertanyaan.trim() && bidangIlmu.trim() && pilihan.every((o) => o.teks.trim() || o.gambar);
+  const valid = pertanyaan.trim() && departmentId && pilihan.every((o) => o.teks.trim() || o.gambar);
 
   async function save() {
     if (!valid) return;
     setSaving(true);
-    const payload = { pertanyaan, bidangIlmu, gambarSoal, pilihan, jawabanBenar };
+    const payload = { pertanyaan, departmentId, difficulty, gambarSoal, pilihan, jawabanBenar };
     try {
       if (editing) await api.updateQuestion(editing.id, payload);
-      else await api.createQuestion(blockId, payload);
+      else await api.createQuestion(payload);
       onSaved();
       onClose();
     } finally {
@@ -198,25 +219,38 @@ function QuestionFormModal({ open, onClose, blockId, editing, onSaved }: {
   return (
     <Modal open={open} onClose={onClose} size="lg"
       title={editing ? "Edit Soal" : "Tambah Soal"}
-      desc="Template: Soal · Pilihan A–E · Bidang Ilmu · Jawaban Benar. Gambar bisa dipakai pada soal maupun pilihan."
+      desc="Soal akan masuk ke bank soal dengan departemen dan tingkat kesulitan yang dipilih."
       footer={<><Button variant="outline" onClick={onClose}>Batal</Button><Button onClick={save} loading={saving} disabled={!valid}>{editing ? "Simpan Perubahan" : "Simpan Soal"}</Button></>}>
       <div className="space-y-5">
         <Field label="Pertanyaan">
           <Textarea value={pertanyaan} onChange={(e) => setPertanyaan(e.target.value)} placeholder="Tulis pertanyaan…" />
         </Field>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Bidang Ilmu" hint="mis. Anatomi, Fisiologi, Farmakologi">
-            <Input value={bidangIlmu} onChange={(e) => setBidangIlmu(e.target.value)} placeholder="Fisiologi" />
-          </Field>
-          <Field label="Gambar Soal" hint="Opsional">
-            <ImageInput value={gambarSoal} onChange={setGambarSoal} />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <Field label="Departemen">
+              <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
+                <option value="">— Pilih departemen —</option>
+                {depts.map((d) => <option key={d.id} value={d.id}>{d.nama}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <Field label="Kesulitan">
+            <Select value={difficulty} onChange={(e) => setDifficulty(e.target.value as QuestionDifficulty)}>
+              {(["EASY", "MEDIUM", "HARD"] as QuestionDifficulty[]).map((d) => (
+                <option key={d} value={d}>{DIFFICULTY_LABEL[d]}</option>
+              ))}
+            </Select>
           </Field>
         </div>
 
+        <Field label="Gambar Soal" hint="Opsional">
+          <ImageInput value={gambarSoal} onChange={setGambarSoal} />
+        </Field>
+
         <div>
           <Label>Pilihan Jawaban</Label>
-          <p className="mb-2 text-xs text-ink-faint">Pilih radio di kiri untuk menandai jawaban benar. Tambahkan gambar bila diperlukan.</p>
+          <p className="mb-2 text-xs text-ink-faint">Pilih radio di kiri untuk menandai jawaban benar.</p>
           <div className="space-y-2">
             {pilihan.map((opt) => (
               <div key={opt.label}
@@ -229,7 +263,11 @@ function QuestionFormModal({ open, onClose, blockId, editing, onSaved }: {
                       jawabanBenar === opt.label ? "bg-success text-white" : "bg-surface-2 text-ink-soft")}>{opt.label}</span>
                   </label>
                   <Input value={opt.teks} onChange={(e) => setOptText(opt.label, e.target.value)} placeholder={`Teks pilihan ${opt.label}`} className="flex-1" />
-                  <ImageInput value={opt.gambar} onChange={(v) => setPilihan((p) => p.map((o) => o.label === opt.label ? { ...o, gambar: v } : o))} compact />
+                  <ImageInput
+                    value={opt.gambar}
+                    onChange={(v) => setPilihan((p) => p.map((o) => o.label === opt.label ? { ...o, gambar: v } : o))}
+                    compact
+                  />
                 </div>
                 {opt.gambar && (
                   <div className="mt-2 pl-9">
@@ -251,7 +289,7 @@ function QuestionFormModal({ open, onClose, blockId, editing, onSaved }: {
   );
 }
 
-// Input gambar (file → data-uri) dengan pratinjau ringkas
+// Input gambar
 function ImageInput({ value, onChange, compact }: { value?: string; onChange: (v?: string) => void; compact?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
   async function pick(file?: File) {
@@ -291,17 +329,17 @@ function ImageInput({ value, onChange, compact }: { value?: string; onChange: (v
 }
 
 // =====================================================================
-//  IMPOR EXCEL / WORD — unggah file → pratinjau hasil parse → impor
-//  (Parsing & ekstraksi gambar dilakukan backend Python.)
+//  IMPOR EXCEL / WORD
 // =====================================================================
-function ImportModal({ kind, onClose, blockId, onImported }: {
-  kind: "excel" | "word" | null; onClose: () => void; blockId: string; onImported: () => void;
+function ImportModal({ kind, onClose, blockId, departments, onImported }: {
+  kind: "excel" | "word" | null; onClose: () => void; blockId: string; departments: Department[]; onImported: () => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<Omit<Question, "id" | "blockId" | "nomor">[] | null>(null);
+  const [preview, setPreview] = useState<Omit<Question, "id" | "nomor">[] | null>(null);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
+  const deptMap = Object.fromEntries(departments.map((d) => [d.id, d.nama]));
 
   const open = kind !== null;
   const accept = kind === "excel" ? ".xlsx,.xls,.csv" : ".docx,.doc";
@@ -326,7 +364,7 @@ function ImportModal({ kind, onClose, blockId, onImported }: {
     if (!preview) return;
     setImporting(true);
     try {
-      for (const q of preview) await api.createQuestion(blockId, q);
+      for (const q of preview) await api.createQuestion(q);
       onImported();
       close();
     } finally {
@@ -337,7 +375,7 @@ function ImportModal({ kind, onClose, blockId, onImported }: {
   return (
     <Modal open={open} onClose={close} size="lg"
       title={kind === "excel" ? "Impor Soal dari Excel" : "Impor Soal dari Word"}
-      desc="Unggah berkas berisi soal. Gambar yang tertanam di berkas akan ikut terbaca sebagai gambar (bukan tautan)."
+      desc="Unggah berkas berisi soal. Gambar yang tertanam di berkas akan ikut terbaca."
       footer={
         preview
           ? <><Button variant="outline" onClick={reset}>Ganti berkas</Button><Button onClick={doImport} loading={importing}><Upload className="h-4 w-4" /> Impor {preview.length} soal</Button></>
@@ -360,10 +398,9 @@ function ImportModal({ kind, onClose, blockId, onImported }: {
             )}
           </button>
           <input ref={ref} type="file" accept={accept} hidden onChange={(e) => onFile(e.target.files?.[0])} />
-
           <div className="mt-4 rounded-xl bg-surface-2 p-4 text-sm text-ink-soft">
             <p className="mb-1 font-medium text-ink">Format kolom yang diharapkan</p>
-            <p>No · Soal · Pilihan A · Pilihan B · Pilihan C · Pilihan D · Pilihan E · Bidang Ilmu · Jawaban Benar</p>
+            <p>No · Soal · Pilihan A–E · Departemen · Kesulitan (EASY/MEDIUM/HARD) · Jawaban Benar</p>
           </div>
         </div>
       ) : (
@@ -374,7 +411,12 @@ function ImportModal({ kind, onClose, blockId, onImported }: {
           </div>
           <div className="max-h-[45vh] space-y-3 overflow-y-auto pr-1">
             {preview.map((q, i) => (
-              <QuestionView key={i} q={{ ...q, id: `prev-${i}`, blockId, nomor: i + 1 } as Question} index={i + 1} />
+              <QuestionView
+                key={i}
+                q={{ ...q, id: `prev-${i}`, nomor: i + 1 } as Question}
+                index={i + 1}
+                departmentNama={deptMap[q.departmentId]}
+              />
             ))}
           </div>
         </div>

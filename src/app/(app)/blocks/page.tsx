@@ -13,33 +13,35 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/dashboard-shell";
 import { Badge, Button, Card, CenterSpinner, EmptyState, Field, Input, Modal, Select, Textarea } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Block, KetuaBlock } from "@/lib/types";
+import type { Block, Department, Employee } from "@/lib/types";
 
 export default function BlocksPage() {
   const [blocks, setBlocks] = useState<Block[] | null>(null);
-  const [ketuas, setKetuas] = useState<KetuaBlock[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [open, setOpen] = useState(false);
 
-  function load() {
-    api.listBlocks().then(setBlocks);
-  }
+  function load() { api.listBlocks().then(setBlocks); }
   useEffect(() => {
     load();
-    api.listUsers("ketua_block").then((u) => setKetuas(u as KetuaBlock[]));
+    api.listEmployees().then(setEmployees);
+    api.listDepartments().then(setDepartments);
   }, []);
+
+  const coordinators = employees.filter((e) => e.role === "BLOCK_COORDINATOR");
 
   return (
     <div className="animate-fade-up space-y-6">
       <PageHeader
         title="Block Ujian"
-        desc="Buat block ujian, lalu kelola soal di dalamnya (Form, Excel, atau Word)."
+        desc="Kelola block ujian: koordinator, departemen yang dicakup, dan soal di bank."
         actions={<Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Buat Block</Button>}
       />
 
       {!blocks ? (
         <CenterSpinner label="Memuat block…" />
       ) : blocks.length === 0 ? (
-        <EmptyState icon={<BookOpen className="h-8 w-8" />} title="Belum ada block" desc="Mulai dengan membuat block ujian pertama Anda."
+        <EmptyState icon={<BookOpen className="h-8 w-8" />} title="Belum ada block" desc="Mulai dengan membuat block ujian pertama."
           action={<Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Buat Block</Button>} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -60,7 +62,7 @@ export default function BlocksPage() {
                 <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
                   <span className="inline-flex items-center gap-1.5 text-sm text-ink-soft">
                     <UserCog className="h-4 w-4 text-ink-faint" />
-                    {b.ketuaNama ?? <span className="text-ink-faint">Belum ada ketua</span>}
+                    {b.coordinatorNama ?? <span className="text-ink-faint">Belum ada koordinator</span>}
                   </span>
                   <ArrowUpRight className="h-4 w-4 text-ink-faint group-hover:text-primary" />
                 </div>
@@ -70,33 +72,50 @@ export default function BlocksPage() {
         </div>
       )}
 
-      <CreateBlockModal open={open} onClose={() => setOpen(false)} ketuas={ketuas} onCreated={load} />
+      <CreateBlockModal
+        open={open}
+        onClose={() => setOpen(false)}
+        coordinators={coordinators}
+        departments={departments}
+        onCreated={load}
+      />
     </div>
   );
 }
 
-function CreateBlockModal({ open, onClose, ketuas, onCreated }: {
-  open: boolean; onClose: () => void; ketuas: KetuaBlock[]; onCreated: () => void;
+function CreateBlockModal({ open, onClose, coordinators, departments, onCreated }: {
+  open: boolean; onClose: () => void; coordinators: Employee[]; departments: Department[]; onCreated: () => void;
 }) {
   const [kode, setKode] = useState("");
   const [nama, setNama] = useState("");
   const [semester, setSemester] = useState("1");
   const [deskripsi, setDeskripsi] = useState("");
-  const [ketuaId, setKetuaId] = useState("");
+  const [coordinatorId, setCoordinatorId] = useState("");
+  const [selectedDepts, setSelectedDepts] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   function reset() {
-    setKode(""); setNama(""); setSemester("1"); setDeskripsi(""); setKetuaId("");
+    setKode(""); setNama(""); setSemester("1"); setDeskripsi(""); setCoordinatorId(""); setSelectedDepts(new Set());
+  }
+
+  function toggleDept(id: string) {
+    setSelectedDepts((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   }
 
   async function save() {
     if (!nama || !kode) return;
     setSaving(true);
-    const ketua = ketuas.find((k) => k.id === ketuaId);
+    const coordinator = coordinators.find((k) => k.id === coordinatorId);
     try {
       await api.createBlock({
         kode, nama, semester: Number(semester), deskripsi: deskripsi || undefined,
-        ketuaId: ketua?.id, ketuaNama: ketua?.nama,
+        coordinatorEmployeeId: coordinator?.id,
+        coordinatorNama: coordinator?.nama,
+        departmentIds: [...selectedDepts],
       });
       onCreated();
       reset();
@@ -107,7 +126,8 @@ function CreateBlockModal({ open, onClose, ketuas, onCreated }: {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Buat Block Ujian" desc="Block menampung kumpulan soal untuk satu sistem/topik."
+    <Modal open={open} onClose={onClose} title="Buat Block Ujian"
+      desc="Block menampung mahasiswa dan menjadi dasar pemilihan peserta ujian."
       footer={<><Button variant="outline" onClick={onClose}>Batal</Button><Button onClick={save} loading={saving} disabled={!nama || !kode}>Simpan Block</Button></>}>
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -122,12 +142,27 @@ function CreateBlockModal({ open, onClose, ketuas, onCreated }: {
         <Field label="Deskripsi" hint="Opsional">
           <Textarea value={deskripsi} onChange={(e) => setDeskripsi(e.target.value)} placeholder="Cakupan materi block ini…" />
         </Field>
-        <Field label="Ketua Block" hint="Ketua dapat melihat soal & nilai mahasiswa di block ini">
-          <Select value={ketuaId} onChange={(e) => setKetuaId(e.target.value)}>
+        <Field label="Koordinator Block" hint="Koordinator dari Identity Service yang mengampu block ini">
+          <Select value={coordinatorId} onChange={(e) => setCoordinatorId(e.target.value)}>
             <option value="">— Belum ditentukan —</option>
-            {ketuas.map((k) => <option key={k.id} value={k.id}>{k.nama} · {k.jenisBlock}</option>)}
+            {coordinators.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
           </Select>
         </Field>
+        <div>
+          <p className="mb-2 text-sm font-medium text-ink">Departemen yang dicakup</p>
+          <p className="mb-2 text-xs text-ink-faint">Soal dari departemen terpilih akan digunakan dalam ujian block ini.</p>
+          <div className="flex flex-wrap gap-2">
+            {departments.map((d) => {
+              const active = selectedDepts.has(d.id);
+              return (
+                <button key={d.id} type="button" onClick={() => toggleDept(d.id)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${active ? "border-primary bg-primary-soft text-primary" : "border-line text-ink-soft hover:border-ink-faint"}`}>
+                  {d.nama}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </Modal>
   );

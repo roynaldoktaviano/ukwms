@@ -1,20 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { Role } from "@/lib/types";
 
-// Rute publik (tidak butuh sesi)
 const PUBLIC = ["/login", "/auth/callback"];
 
-// Hak akses per-prefix rute. (Validasi sebenarnya tetap di backend.)
 const RULES: { prefix: string; roles: Role[] }[] = [
-  { prefix: "/ujian", roles: ["student"] },
-  { prefix: "/hasil-ujian", roles: ["student"] },
-  { prefix: "/exam", roles: ["student"] },
-  { prefix: "/blok-saya", roles: ["ketua_block"] },
-  { prefix: "/blocks", roles: ["admin", "super_admin"] },
-  { prefix: "/kelola-ujian", roles: ["admin", "super_admin"] },
-  { prefix: "/periode", roles: ["admin", "super_admin"] },
-  { prefix: "/bank-soal", roles: ["super_admin"] },
-  { prefix: "/pengguna", roles: ["super_admin"] },
+  { prefix: "/ujian",        roles: ["student"] },
+  { prefix: "/hasil-ujian",  roles: ["student"] },
+  { prefix: "/exam",         roles: ["student"] },
+  { prefix: "/blok-saya",    roles: ["BLOCK_COORDINATOR"] },
+  { prefix: "/dept-saya",    roles: ["DEPT_COORDINATOR"] },
+  { prefix: "/blocks",       roles: ["ADMIN", "EXAM_MANAGER"] },
+  { prefix: "/kelola-ujian", roles: ["ADMIN", "EXAM_MANAGER"] },
+  { prefix: "/periode",      roles: ["ADMIN", "EXAM_MANAGER"] },
+  { prefix: "/bank-soal",    roles: ["ADMIN", "QUESTION_MANAGER", "QUESTION_REVIEWER"] },
+  { prefix: "/analitik",     roles: ["ADMIN", "ANALYTICS_VIEWER"] },
+  { prefix: "/pengguna",     roles: ["ADMIN"] },
 ];
 
 export function middleware(req: NextRequest) {
@@ -23,7 +23,6 @@ export function middleware(req: NextRequest) {
 
   const role = req.cookies.get("cbt_role")?.value as Role | undefined;
 
-  // Belum login → ke /login
   if (!role) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
@@ -31,7 +30,6 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Cek rule akses
   const rule = RULES.find((r) => pathname === r.prefix || pathname.startsWith(r.prefix + "/"));
   if (rule && !rule.roles.includes(role)) {
     const url = req.nextUrl.clone();
@@ -43,6 +41,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Jalankan di semua rute kecuali aset statis & file
   matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };

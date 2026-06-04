@@ -17,6 +17,7 @@ import { Badge, Button, Card, CenterSpinner, Dot, EmptyState } from "@/component
 import { useAuth } from "@/contexts/auth-context";
 import { api } from "@/lib/api";
 import type { Exam, ResultSummary, Student } from "@/lib/types";
+import { EXAM_TYPE_LABEL } from "@/lib/types";
 import { fmtDuration } from "@/lib/utils";
 
 export default function UjianPage() {
@@ -41,9 +42,9 @@ export default function UjianPage() {
 
   return (
     <div className="animate-fade-up space-y-6">
-      <PageHeader title="Ujian Saya" desc="Daftar ujian yang ditugaskan kepada Anda. Soal akan diacak otomatis saat ujian dimulai." />
+      <PageHeader title="Ujian Saya" desc="Daftar ujian yang ditugaskan. Soal akan diacak otomatis saat ujian dimulai." />
 
-      {/* Kartu identitas mahasiswa */}
+      {/* Kartu identitas */}
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-x-8 gap-y-4 bg-gradient-to-r from-primary to-[#0a3a34] px-6 py-5 text-white">
           <div className="flex items-center gap-3">
@@ -71,21 +72,22 @@ export default function UjianPage() {
           {exams.map((e) => {
             const r = results[e.id];
             const done = r && r.status !== "Belum Dikerjakan";
-            const canStart = e.status === "ongoing" && !done;
+            const canStart = e.status === "IN_PROGRESS" && !done;
             return (
               <Card key={e.id} className="p-5">
                 <div className="flex flex-wrap items-start gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="mb-1.5 flex flex-wrap items-center gap-2">
                       <StatusBadge status={e.status} done={!!done} />
-                      <Badge tone={e.jenisUjian === "Remidi" ? "warn" : "neutral"}>{e.jenisUjian}</Badge>
                       <Badge tone="neutral">
-                        {e.tipeUjian === "Praktikum" ? <FlaskConical className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
-                        {e.tipeUjian}
+                        {e.examType === "PRACTICUM" ? <FlaskConical className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                        {EXAM_TYPE_LABEL[e.examType]}
                       </Badge>
                     </div>
                     <h3 className="font-display text-lg text-ink">{e.nama}</h3>
-                    <p className="text-sm text-ink-soft">{e.blockNama} · Semester {e.semester}</p>
+                    <p className="text-sm text-ink-soft">
+                      {e.blockNama}{e.departmentNama && ` · ${e.departmentNama}`}
+                    </p>
 
                     <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-ink-soft">
                       <span className="inline-flex items-center gap-1.5"><Layers className="h-4 w-4 text-ink-faint" /> {e.jumlahSoal} soal acak</span>
@@ -101,8 +103,10 @@ export default function UjianPage() {
                       <Button onClick={() => router.push(`/exam/${e.id}`)} className="w-full sm:w-auto">
                         <PlayCircle className="h-4 w-4" /> Mulai Ujian
                       </Button>
+                    ) : e.status === "READY" ? (
+                      <Button variant="outline" disabled className="w-full sm:w-auto">Menunggu dibuka</Button>
                     ) : (
-                      <Button variant="outline" disabled className="w-full sm:w-auto">Belum dibuka</Button>
+                      <Button variant="outline" disabled className="w-full sm:w-auto">Belum tersedia</Button>
                     )}
                     {canStart && (
                       <p className="flex items-center gap-1 text-xs text-ink-faint">
@@ -134,8 +138,8 @@ function Meta({ icon: Icon, label, value }: { icon: React.ElementType; label: st
 
 function StatusBadge({ status, done }: { status: Exam["status"]; done: boolean }) {
   if (done) return <Badge tone="success">Selesai</Badge>;
-  if (status === "ongoing") return <Badge tone="success"><Dot tone="success" pulse /> Berlangsung</Badge>;
-  if (status === "scheduled") return <Badge tone="primary">Terjadwal</Badge>;
-  if (status === "finished") return <Badge tone="neutral">Berakhir</Badge>;
+  if (status === "IN_PROGRESS") return <Badge tone="success"><Dot tone="success" pulse /> Berlangsung</Badge>;
+  if (status === "READY") return <Badge tone="primary">Siap</Badge>;
+  if (status === "FINISHED") return <Badge tone="neutral">Berakhir</Badge>;
   return <Badge tone="neutral">Draf</Badge>;
 }

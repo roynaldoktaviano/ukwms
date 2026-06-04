@@ -1,11 +1,11 @@
 "use client";
 
 import {
+  BarChart3,
   BookOpen,
   CalendarRange,
   ClipboardList,
   Database,
-  FileStack,
   GraduationCap,
   LayoutDashboard,
   LogOut,
@@ -25,16 +25,27 @@ import { cn } from "@/lib/utils";
 
 type NavItem = { href: string; label: string; icon: React.ElementType; roles: Role[] };
 
+// Semua roles staf CBT
+const STAFF_ROLES: Role[] = ["ADMIN", "EXAM_MANAGER", "QUESTION_MANAGER", "QUESTION_REVIEWER", "ANALYTICS_VIEWER"];
+
 const NAV: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["student", "ketua_block", "admin", "super_admin"] },
-  { href: "/ujian", label: "Ujian Saya", icon: ClipboardList, roles: ["student"] },
-  { href: "/hasil-ujian", label: "Hasil Ujian", icon: GraduationCap, roles: ["student"] },
-  { href: "/blok-saya", label: "Blok Saya", icon: BookOpen, roles: ["ketua_block"] },
-  { href: "/blocks", label: "Block Ujian", icon: BookOpen, roles: ["admin", "super_admin"] },
-  { href: "/kelola-ujian", label: "Kelola Ujian", icon: ClipboardList, roles: ["admin", "super_admin"] },
-  { href: "/periode", label: "Periode", icon: CalendarRange, roles: ["admin", "super_admin"] },
-  { href: "/bank-soal", label: "Bank Soal", icon: Database, roles: ["super_admin"] },
-  { href: "/pengguna", label: "Pengguna", icon: Users, roles: ["super_admin"] },
+  { href: "/dashboard",    label: "Dashboard",       icon: LayoutDashboard, roles: ["student", "BLOCK_COORDINATOR", "DEPT_COORDINATOR", ...STAFF_ROLES] },
+
+  // Mahasiswa
+  { href: "/ujian",        label: "Ujian Saya",      icon: ClipboardList,   roles: ["student"] },
+  { href: "/hasil-ujian",  label: "Hasil Ujian",     icon: GraduationCap,   roles: ["student"] },
+
+  // Koordinator
+  { href: "/blok-saya",    label: "Blok Saya",       icon: BookOpen,        roles: ["BLOCK_COORDINATOR"] },
+  { href: "/dept-saya",    label: "Departemen Saya", icon: Database,        roles: ["DEPT_COORDINATOR"] },
+
+  // Staf CBT
+  { href: "/blocks",       label: "Block Ujian",     icon: BookOpen,        roles: ["ADMIN", "EXAM_MANAGER"] },
+  { href: "/kelola-ujian", label: "Kelola Ujian",    icon: ClipboardList,   roles: ["ADMIN", "EXAM_MANAGER"] },
+  { href: "/bank-soal",    label: "Bank Soal",       icon: Database,        roles: ["ADMIN", "QUESTION_MANAGER", "QUESTION_REVIEWER"] },
+  { href: "/analitik",     label: "Analitik",        icon: BarChart3,       roles: ["ADMIN", "ANALYTICS_VIEWER"] },
+  { href: "/periode",      label: "Periode",         icon: CalendarRange,   roles: ["ADMIN", "EXAM_MANAGER"] },
+  { href: "/pengguna",     label: "Pengguna",        icon: Users,           roles: ["ADMIN"] },
 ];
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -113,13 +124,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <button onClick={() => setOpen(true)} className="rounded-lg p-2 text-ink-soft hover:bg-black/5 lg:hidden">
             <Menu className="h-5 w-5" />
           </button>
-          <FileStack className="hidden h-4 w-4 text-ink-faint sm:block" />
+          <CalendarRange className="hidden h-4 w-4 text-ink-faint sm:block" />
           <p className="hidden text-sm text-ink-soft sm:block">
-            Computer-Based Test · <span className="text-ink">{ROLE_LABEL[user.role]}</span>
+            CBT · <span className="text-ink">{ROLE_LABEL[user.role]}</span>
           </p>
           <div className="ml-auto flex items-center gap-3">
             {activePeriod ? (
-              <Badge tone="primary"><CalendarRange className="h-3.5 w-3.5" /> Periode {activePeriod}</Badge>
+              <Badge tone="primary"><CalendarRange className="h-3.5 w-3.5" /> {activePeriod}</Badge>
             ) : (
               <Badge tone="warn">Belum ada periode aktif</Badge>
             )}
@@ -132,7 +143,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Header section helper untuk konsistensi judul halaman
 export function PageHeader({ title, desc, actions }: { title: string; desc?: string; actions?: React.ReactNode }) {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
